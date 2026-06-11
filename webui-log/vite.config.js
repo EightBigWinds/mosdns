@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename)
 const assetVersion = process.env.MOSDNS_ASSET_VERSION || new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
 const outDir = path.resolve(__dirname, '../coremain/www/assets/vue-log')
 const rootHtmlPath = path.resolve(__dirname, '../coremain/www/log.html')
+const devProxyTarget = process.env.MOSDNS_DEV_PROXY_TARGET || 'http://10.10.10.252:9099'
 
 export default defineConfig({
   plugins: [
@@ -42,6 +43,20 @@ export default defineConfig({
     }
   ],
   publicDir: false,
+  server: {
+    host: '0.0.0.0',
+    port: 4174,
+    proxy: {
+      '/api': {
+        target: devProxyTarget,
+        changeOrigin: true
+      },
+      '/plugins': {
+        target: devProxyTarget,
+        changeOrigin: true
+      }
+    }
+  },
   build: {
     outDir,
     emptyOutDir: true,
@@ -57,6 +72,17 @@ export default defineConfig({
             return 'app.css'
           }
           return 'assets/[name]-[hash][extname]'
+        },
+        manualChunks(id) {
+          if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) {
+            return 'echarts'
+          }
+          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) {
+            return 'vue'
+          }
+          if (id.includes('node_modules')) {
+            return 'vendor'
+          }
         }
       }
     }

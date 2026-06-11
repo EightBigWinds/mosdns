@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getJSON } from '../api/http'
 import DnsOverviewCard from './dashboard/DnsOverviewCard.vue'
 
@@ -32,15 +32,24 @@ const topDomainDetailOpen = ref(false)
 const selectedTopDomain = ref('')
 const topDomainDetailLoading = ref(false)
 const topDomainDetailLogs = ref([])
-const overviewGridRef = ref(null)
-const visibleOverviewRows = ref(7)
+const overviewSortState = reactive({
+  topDomains: { key: '', order: 'asc' },
+  topClients: { key: '', order: 'asc' },
+  slowest: { key: '', order: 'asc' },
+  domainSet: { key: '', order: 'asc' }
+})
 
-const OVERVIEW_MIN_ROWS = 5
-const OVERVIEW_MAX_ROWS = 15
-const OVERVIEW_CARD_CHROME = 44
+const overviewSortDefaults = {
+  topDomains: { domain: 'asc', count: 'desc' },
+  topClients: { client: 'asc', count: 'desc' },
+  slowest: { domain: 'asc', duration: 'desc' },
+  domainSet: { rule: 'asc', count: 'desc', percent: 'desc' }
+}
+const OVERVIEW_VISIBLE_ROWS = 7
+const OVERVIEW_CARD_CHROME = 64
 const OVERVIEW_TABLE_HEAD = 42
 const OVERVIEW_TABLE_ROW = 42
-const OVERVIEW_VIEWPORT_BOTTOM_GAP = 28
+const OVERVIEW_TABLE_BODY_EXTRA = 0
 
 const DONUT_COLORS = ['#6d9dff', '#f778ba', '#2dd4bf', '#fb923c', '#a78bfa', '#fde047', '#ff8c8c', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#64748b']
 const DONUT_RADIUS = 48
@@ -63,6 +72,43 @@ const domainSetRows = computed(() => {
   })
 })
 const domainSetTotal = computed(() => domainSetRows.value.reduce((sum, item) => sum + item.count, 0))
+const sortedTopDomains = computed(() => sortOverviewRows(
+  topDomains.value,
+  overviewSortState.topDomains,
+  {
+    domain: (item) => String(item?.key || ''),
+    count: (item) => Number(item?.count || 0)
+  },
+  { count: 'number' }
+))
+const sortedTopClients = computed(() => sortOverviewRows(
+  topClients.value,
+  overviewSortState.topClients,
+  {
+    client: (item) => getClientRankDisplay(item?.key),
+    count: (item) => Number(item?.count || 0)
+  },
+  { count: 'number' }
+))
+const sortedSlowestQueries = computed(() => sortOverviewRows(
+  slowestQueries.value,
+  overviewSortState.slowest,
+  {
+    domain: (item) => String(item?.query_name || ''),
+    duration: (item) => Number(item?.duration_ms || 0)
+  },
+  { duration: 'number' }
+))
+const sortedDomainSetRows = computed(() => sortOverviewRows(
+  domainSetRows.value,
+  overviewSortState.domainSet,
+  {
+    rule: (item) => getRuleLabel(item?.key),
+    count: (item) => Number(item?.count || 0),
+    percent: (item) => Number(item?.percent || 0)
+  },
+  { count: 'number', percent: 'number' }
+))
 const domainSetSegments = computed(() => {
   const total = domainSetTotal.value
   let offset = 0
@@ -81,34 +127,82 @@ const domainSetSegments = computed(() => {
     })
 })
 const overviewLayoutVars = computed(() => {
-  const rows = visibleOverviewRows.value
-  const listHeight = OVERVIEW_TABLE_HEAD + rows * OVERVIEW_TABLE_ROW
+  const rows = OVERVIEW_VISIBLE_ROWS
+  const bodyHeight = rows * OVERVIEW_TABLE_ROW + OVERVIEW_TABLE_BODY_EXTRA
+  const listHeight = OVERVIEW_TABLE_HEAD + bodyHeight
   const cardHeight = OVERVIEW_CARD_CHROME + listHeight
   return {
     '--overview-visible-rows': String(rows),
+    '--overview-table-head-height': `${OVERVIEW_TABLE_HEAD}px`,
+    '--overview-table-row-height': `${OVERVIEW_TABLE_ROW}px`,
+    '--overview-table-body-height': `${bodyHeight}px`,
     '--overview-list-max-height': `${listHeight}px`,
     '--overview-card-min-height': `${cardHeight}px`
   }
 })
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max)
+function compareOverviewValues(left, right, type = 'text') {
+  if (type === 'number') {
+    const leftNumber = Number(left || 0)
+    const rightNumber = Number(right || 0)
+    return leftNumber - rightNumber
+  }
+  return String(left || '').localeCompare(String(right || ''), 'zh-CN', { numeric: true, sensitivity: 'base' })
 }
 
-function updateOverviewRows() {
-  const grid = overviewGridRef.value
-  if (!grid || typeof window === 'undefined') {
-    return
+function sortOverviewRows(rows, sortState, accessors, types = {}) {
+  const list = Array.isArray(rows) ? rows : []
+  const key = sortState?.key
+  const accessor = accessors[key]
+  if (!key || !accessor) {
+    return list.slice()
   }
-  if (window.innerWidth <= 1100) {
-    visibleOverviewRows.value = OVERVIEW_MIN_ROWS
-    return
-  }
+  const order = sortState.order === 'asc' ? 'asc' : 'desc'
+  const direction = order === 'asc' ? 1 : -1
+  return list
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const compared = compareOverviewValues(accessor(left.item), accessor(right.item), types[key])
+      if (compared !== 0) {
+        return compared * direction
+      }
+      return left.index - right.index
+    })
+    .map((entry) => entry.item)
+}
 
-  const gridRect = grid.getBoundingClientRect()
-  const availableHeight = window.innerHeight - gridRect.top - OVERVIEW_VIEWPORT_BOTTOM_GAP
-  const computedRows = Math.floor((availableHeight - OVERVIEW_CARD_CHROME - OVERVIEW_TABLE_HEAD) / OVERVIEW_TABLE_ROW)
-  visibleOverviewRows.value = clamp(computedRows, OVERVIEW_MIN_ROWS, OVERVIEW_MAX_ROWS)
+function setOverviewSort(module, key) {
+  const state = overviewSortState[module]
+  if (!state) {
+    return
+  }
+  const defaultOrder = overviewSortDefaults[module]?.[key] || 'asc'
+  if (state.key === key) {
+    if (state.order === defaultOrder) {
+      state.order = defaultOrder === 'asc' ? 'desc' : 'asc'
+      return
+    }
+    state.key = ''
+    state.order = 'asc'
+    return
+  }
+  state.key = key
+  state.order = defaultOrder
+}
+
+function overviewSortIndicator(module, key) {
+  const state = overviewSortState[module]
+  if (!state || state.key !== key) {
+    return ''
+  }
+  return state.order === 'asc' ? '▲' : '▼'
+}
+
+function resetOverviewSortState() {
+  Object.values(overviewSortState).forEach((state) => {
+    state.key = ''
+    state.order = 'asc'
+  })
 }
 
 function clearMessages() {
@@ -163,6 +257,15 @@ function getClientDisplay(ip) {
   }
   const alias = aliases.value[normalized]
   return alias || normalized
+}
+
+function getClientRankDisplay(ip) {
+  const normalized = normalizeIP(ip)
+  if (!normalized) {
+    return '-'
+  }
+  const alias = aliases.value[normalized]
+  return alias && alias !== normalized ? `${alias}（${normalized}）` : normalized
 }
 
 function hasAlias(ip) {
@@ -432,6 +535,7 @@ async function reloadOverview(showMessage = false) {
     domainSetRank.value = Array.isArray(domainSetRes) ? domainSetRes : []
     specialGroups.value = Array.isArray(specialGroupsRes) ? specialGroupsRes : []
     aliases.value = normalizeAliasMap(aliasesRes)
+    resetOverviewSortState()
     lastUpdatedText.value = new Date().toLocaleString('zh-CN', { hour12: false })
 
     if (showMessage) {
@@ -441,9 +545,6 @@ async function reloadOverview(showMessage = false) {
     setError(`加载概览失败: ${error.message}`)
   } finally {
     loading.value = false
-    nextTick(() => {
-      updateOverviewRows()
-    })
   }
 }
 
@@ -454,16 +555,11 @@ function handleGlobalRefresh() {
 onMounted(() => {
   loadHistory()
   reloadOverview(false)
-  nextTick(() => {
-    updateOverviewRows()
-  })
   window.addEventListener('mosdns-log-refresh', handleGlobalRefresh)
-  window.addEventListener('resize', updateOverviewRows)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mosdns-log-refresh', handleGlobalRefresh)
-  window.removeEventListener('resize', updateOverviewRows)
 })
 </script>
 
@@ -471,23 +567,23 @@ onBeforeUnmount(() => {
   <section class="overview-page" :style="overviewLayoutVars">
     <DnsOverviewCard />
 
-    <div ref="overviewGridRef" class="overview-grid">
+    <div class="overview-grid">
       <section class="panel sub-panel overview-metric-module">
         <h3>Top 域名</h3>
         <div class="table-wrap overview-table-fit top-domains-fit module-scroll-list">
           <table>
             <thead>
               <tr>
-                <th>域名</th>
-                <th class="text-right">次数</th>
+                <th class="sortable" @click="setOverviewSort('topDomains', 'domain')">域名 <span class="sort-indicator">{{ overviewSortIndicator('topDomains', 'domain') }}</span></th>
+                <th class="sortable text-right" @click="setOverviewSort('topDomains', 'count')">次数 <span class="sort-indicator">{{ overviewSortIndicator('topDomains', 'count') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-if="topDomains.length === 0">
+              <tr v-if="sortedTopDomains.length === 0">
                 <td colspan="2" class="empty">暂无数据</td>
               </tr>
               <tr
-                v-for="item in topDomains"
+                v-for="item in sortedTopDomains"
                 :key="`domain-${item.key}`"
                 class="overview-click-row"
                 @click="openTopDomainDetail(item)"
@@ -506,18 +602,17 @@ onBeforeUnmount(() => {
           <table>
             <thead>
               <tr>
-                <th>客户端</th>
-                <th class="text-right">次数</th>
+                <th class="sortable" @click="setOverviewSort('topClients', 'client')">客户端 <span class="sort-indicator">{{ overviewSortIndicator('topClients', 'client') }}</span></th>
+                <th class="sortable text-right" @click="setOverviewSort('topClients', 'count')">次数 <span class="sort-indicator">{{ overviewSortIndicator('topClients', 'count') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-if="topClients.length === 0">
+              <tr v-if="sortedTopClients.length === 0">
                 <td colspan="2" class="empty">暂无数据</td>
               </tr>
-              <tr v-for="item in topClients" :key="`client-${item.key}`">
+              <tr v-for="item in sortedTopClients" :key="`client-${item.key}`">
                 <td>
-                  <div>{{ getClientDisplay(item.key) }}</div>
-                  <small v-if="hasAlias(item.key)" class="muted mono">{{ normalizeIP(item.key) }}</small>
+                  {{ getClientRankDisplay(item.key) }}
                 </td>
                 <td class="text-right">{{ Number(item.count || 0).toLocaleString() }}</td>
               </tr>
@@ -532,16 +627,16 @@ onBeforeUnmount(() => {
           <table>
             <thead>
               <tr>
-                <th>域名</th>
-                <th class="text-right">耗时</th>
+                <th class="sortable" @click="setOverviewSort('slowest', 'domain')">域名 <span class="sort-indicator">{{ overviewSortIndicator('slowest', 'domain') }}</span></th>
+                <th class="sortable text-right" @click="setOverviewSort('slowest', 'duration')">耗时 <span class="sort-indicator">{{ overviewSortIndicator('slowest', 'duration') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-if="slowestQueries.length === 0">
+              <tr v-if="sortedSlowestQueries.length === 0">
                 <td colspan="2" class="empty">暂无数据</td>
               </tr>
               <tr
-                v-for="(item, index) in slowestQueries"
+                v-for="(item, index) in sortedSlowestQueries"
                 :key="`slow-${index}-${item.trace_id || item.query_time}`"
                 class="overview-click-row"
                 @click="openSlowDetail(item)"
@@ -565,16 +660,16 @@ onBeforeUnmount(() => {
           <table>
             <thead>
               <tr>
-                <th>规则</th>
-                <th class="text-right">次数</th>
-                <th class="text-right">占比</th>
+                <th class="sortable" @click="setOverviewSort('domainSet', 'rule')">规则 <span class="sort-indicator">{{ overviewSortIndicator('domainSet', 'rule') }}</span></th>
+                <th class="sortable text-right" @click="setOverviewSort('domainSet', 'count')">次数 <span class="sort-indicator">{{ overviewSortIndicator('domainSet', 'count') }}</span></th>
+                <th class="sortable text-right" @click="setOverviewSort('domainSet', 'percent')">占比 <span class="sort-indicator">{{ overviewSortIndicator('domainSet', 'percent') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-if="domainSetRows.length === 0">
+              <tr v-if="sortedDomainSetRows.length === 0">
                 <td colspan="3" class="empty">暂无数据</td>
               </tr>
-              <tr v-for="item in domainSetRows" :key="`set-${item.key}`">
+              <tr v-for="item in sortedDomainSetRows" :key="`set-${item.key}`">
                 <td>
                   <span class="domain-set-rule">
                     <span class="domain-set-name">{{ getRuleLabel(item.key) }}</span>

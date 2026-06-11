@@ -1,17 +1,18 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getJSON } from './api/http'
 import ConfirmBubbleHost from './components/ConfirmBubbleHost.vue'
-import DataManagementManager from './components/DataManagementManager.vue'
-import ListManager from './components/ListManager.vue'
 import OverviewManager from './components/OverviewManager.vue'
-import QueryManager from './components/QueryManager.vue'
-import RulesManager from './components/RulesManager.vue'
-import SystemControlManager from './components/SystemControlManager.vue'
-import UpstreamManager from './components/UpstreamManager.vue'
 import { previewPanelBackground } from './utils/panelBackground'
 import { applyTextColorForTheme, loadTextColorSettingsFromStorage, normalizeTextColorSettings, saveTextColorSettingsToStorage } from './utils/appearanceTextColor'
 import { applyButtonColorForTheme, loadButtonColorSettingsFromStorage, normalizeButtonColorSettings, saveButtonColorSettingsToStorage } from './utils/appearanceButtonColor'
+
+const DataManagementManager = defineAsyncComponent(() => import('./components/DataManagementManager.vue'))
+const ListManager = defineAsyncComponent(() => import('./components/ListManager.vue'))
+const QueryManager = defineAsyncComponent(() => import('./components/QueryManager.vue'))
+const RulesManager = defineAsyncComponent(() => import('./components/RulesManager.vue'))
+const SystemControlManager = defineAsyncComponent(() => import('./components/SystemControlManager.vue'))
+const UpstreamManager = defineAsyncComponent(() => import('./components/UpstreamManager.vue'))
 
 const activeMainTab = ref('overview')
 const activeQuerySubTab = ref('live')

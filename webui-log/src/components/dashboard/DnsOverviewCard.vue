@@ -28,7 +28,7 @@ function toggleSeries(key: SeriesKey) {
 
 const totalQueriesText = computed(() => formatCount(metrics.totalQueries))
 const averageLatencyText = computed(() => formatLatencyMs(metrics.averageLatency))
-const currentQueriesText = computed(() => formatCount(metrics.currentQueries))
+const currentQueriesText = computed(() => `${formatCount(metrics.currentQueries)} QPS`)
 const currentLatencyText = computed(() => formatLatencyMs(metrics.currentLatency))
 const currentTheme = ref<'light' | 'dark'>('light')
 
@@ -289,11 +289,29 @@ onBeforeUnmount(() => {
 
         <aside class="kpi-side">
           <div class="side-item">
-            <span class="side-label">当前请求数：</span>
+            <button
+              class="side-series-toggle request"
+              :class="{ selected: seriesState.request }"
+              type="button"
+              :aria-pressed="seriesState.request"
+              @click="toggleSeries('request')"
+            >
+              <span class="series-dot"></span>
+              <span class="side-label">当前请求频率</span>
+            </button>
             <span class="side-value">{{ currentQueriesText }}</span>
           </div>
           <div class="side-item">
-            <span class="side-label">当前处理时间：</span>
+            <button
+              class="side-series-toggle latency"
+              :class="{ selected: seriesState.latency }"
+              type="button"
+              :aria-pressed="seriesState.latency"
+              @click="toggleSeries('latency')"
+            >
+              <span class="series-dot"></span>
+              <span class="side-label">当前处理时间</span>
+            </button>
             <span class="side-value accent">{{ currentLatencyText }}</span>
           </div>
         </aside>
@@ -306,27 +324,6 @@ onBeforeUnmount(() => {
         :show-request-series="seriesState.request"
         :show-latency-series="seriesState.latency"
       />
-
-      <div class="series-toggle-row">
-        <button
-          class="series-toggle-btn request"
-          :class="{ selected: seriesState.request }"
-          type="button"
-          @click="toggleSeries('request')"
-        >
-          <span class="series-dot"></span>
-          请求数
-        </button>
-        <button
-          class="series-toggle-btn latency"
-          :class="{ selected: seriesState.latency }"
-          type="button"
-          @click="toggleSeries('latency')"
-        >
-          <span class="series-dot"></span>
-          平均处理时间
-        </button>
-      </div>
 
       <footer class="trend-foot">
         <span v-if="!initialized" class="muted-text">正在加载实时指标...</span>
@@ -453,7 +450,8 @@ onBeforeUnmount(() => {
 
 .trend-title h3 {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: 1.05rem;
+  line-height: 1.25;
   color: inherit;
 }
 
@@ -527,15 +525,69 @@ onBeforeUnmount(() => {
 .kpi-side {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
   min-width: max-content;
   justify-self: end;
+  margin-top: 24px;
+  margin-right: 30px;
 }
 
 .side-item {
   display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
+  justify-content: flex-start;
+  align-items: center;
+  min-height: 22px;
+  gap: 4px;
+}
+
+.side-series-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 98px;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-1);
+  font: inherit;
+  line-height: 1.1;
+  padding: 2px 7px 3px;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
+}
+
+.side-series-toggle .series-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 auto;
+  opacity: 0.45;
+  align-self: center;
+}
+
+.side-series-toggle.request .series-dot {
+  background: #5da8ff;
+}
+
+.side-series-toggle.latency .series-dot {
+  background: #40d889;
+}
+
+.side-series-toggle:hover,
+.side-series-toggle.selected {
+  background: var(--surface-active);
+  border-color: var(--brand);
+}
+
+.side-series-toggle.selected .series-dot {
+  opacity: 1;
+}
+
+.side-series-toggle:not(.selected) {
+  opacity: 0.66;
 }
 
 .side-label {
@@ -546,69 +598,18 @@ onBeforeUnmount(() => {
 }
 
 .side-value {
+  display: inline-block;
+  width: 64px;
   margin: 0;
   color: var(--ink-0);
   font-size: 0.9rem;
   font-weight: 600;
+  text-align: right;
   white-space: nowrap;
 }
 
 .side-value.accent {
   color: var(--ink-0);
-}
-
-.series-toggle-row {
-  margin-top: 4px;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding-left: 22px;
-}
-
-.series-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-  color: var(--ink-1);
-  font-size: 0.74rem;
-  font-weight: 600;
-  line-height: 1;
-  padding: 5px 9px;
-  cursor: pointer;
-  transition: all 0.16s ease;
-}
-
-.series-toggle-btn .series-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  display: inline-block;
-  opacity: 0.65;
-}
-
-.series-toggle-btn.request .series-dot {
-  background: #5da8ff;
-}
-
-.series-toggle-btn.latency .series-dot {
-  background: #40d889;
-}
-
-.series-toggle-btn:hover {
-  border-color: var(--brand);
-}
-
-.series-toggle-btn.selected {
-  background: var(--surface-active);
-  color: var(--ink-0);
-  border-color: var(--brand);
-}
-
-.series-toggle-btn.selected .series-dot {
-  opacity: 1;
 }
 
 .trend-foot {
@@ -819,9 +820,6 @@ onBeforeUnmount(() => {
     justify-self: end;
   }
 
-  .series-toggle-row {
-    padding-left: 18px;
-  }
 }
 
 @media (max-width: 760px) {
@@ -860,9 +858,6 @@ onBeforeUnmount(() => {
     padding: 6px;
   }
 
-  .series-toggle-row {
-    padding-left: 12px;
-  }
 
   .trend-popover-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

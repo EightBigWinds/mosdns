@@ -318,12 +318,12 @@ onBeforeUnmount(() => {
 <style scoped>
 .realtime-trend-chart {
   width: 100%;
-  height: 220px;
+  height: 167px;
 }
 
 @media (max-width: 900px) {
   .realtime-trend-chart {
-    height: 190px;
+    height: 143px;
   }
 }
 </style>
